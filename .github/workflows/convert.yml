@@ -1,0 +1,39 @@
+name: Convert Ruleset to MRS
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天凌晨2点自动运行
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v3
+
+      - name: Download Source Rule
+        run: |
+          mkdir -p ./rules
+          # 下载 xmdhs 的源文件
+          curl -L -o ./rules/ext-cn-list.yaml https://raw.githubusercontent.com/xmdhs/cn-domain-list/rule-set/ext-cn-list.yaml
+
+      - name: Install Mihomo
+        run: |
+          # 下载最新版 Mihomo 内核用于编译
+          wget https://github.com/MetaCubeX/mihomo/releases/download/v1.18.1/mihomo-linux-amd64-v1.18.1.gz
+          gunzip mihomo-linux-amd64-v1.18.1.gz
+          mv mihomo-linux-amd64-v1.18.1 mihomo
+          chmod +x mihomo
+
+      - name: Convert to MRS
+        run: |
+          # 执行转换命令
+          ./mihomo convert-ruleset domain yaml ./rules/ext-cn-list.yaml ./rules/ext-cn-list.mrs
+
+      - name: Commit and Push
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add ./rules/ext-cn-list.mrs
+          git commit -m "Auto update MRS rules" || exit 0
+          git push
