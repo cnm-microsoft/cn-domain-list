@@ -1,6 +1,6 @@
 name: Convert Ruleset to MRS
 # 触发条件：每天凌晨 4 点 (UTC) 执行，或者手动点击运行
-于:
+on:
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
 
       - name: Download Latest Mihomo (Compiler)
         run: |
-          # 1. 获取最新版本号
-          LATEST_TAG=$(curl -sSL "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          # 1. 获取最新版本号 (使用 jq 解析 JSON 更稳定)
+          LATEST_TAG=$(curl -sSL "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | jq -r .tag_name)
           echo "Latest Mihomo version: $LATEST_TAG"
           
           # 2. 下载对应架构的二进制文件
@@ -39,7 +39,7 @@ jobs:
 
       - name: Download Source Rules (Upstream)
         run: |
-          # 下载最新的 yaml 源文件 (使用 xmdhs 的源，你也可以换成自己的)
+          # 下载最新的 yaml 源文件
           echo "Downloading CN List..."
           curl -sSL -o ./rules/ext-cn-list.yaml https://raw.githubusercontent.com/xmdhs/cn-domain-list/rule-set/ext-cn-list.yaml
           
@@ -48,11 +48,11 @@ jobs:
 
       - name: Convert to MRS (Binary)
         run: |
-          # 转换 CN 列表
+          # 转换 CN 列表 (注意：命令必须写在同一行，不要回车)
           echo "Converting ext-cn-list..."
           ./tmp_bin/mihomo convert-ruleset domain yaml ./rules/ext-cn-list.yaml ./rules/ext-cn-list.mrs
           
-          # 转换 Not-CN 列表
+          # 转换 Not-CN 列表 (注意：命令必须写在同一行，不要回车)
           echo "Converting ext-not-cn-list..."
           ./tmp_bin/mihomo convert-ruleset domain yaml ./rules/ext-not-cn-list.yaml ./rules/ext-not-cn-list.mrs
           
