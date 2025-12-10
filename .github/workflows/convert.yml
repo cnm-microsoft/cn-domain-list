@@ -1,39 +1,77 @@
 name: Convert Ruleset to MRS
-on:
+# 触发条件：每天凌晨 4 点 (UTC) 执行，或者手动点击运行
+于:
   schedule:
-    - cron: '0 2 * * *' # 每天凌晨2点自动运行
-  workflow_dispatch: # 允许手动点击运行
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  convert:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout codebase
-        uses: actions/checkout@v3
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
 
-      - name: Download Source Rule
+      - name: Prepare Directories
         run: |
           mkdir -p ./rules
-          # 下载 xmdhs 的源文件
-          curl -L -o ./rules/ext-cn-list.yaml https://raw.githubusercontent.com/xmdhs/cn-domain-list/rule-set/ext-cn-list.yaml
+          mkdir -p ./tmp_bin
 
-      - name: Install Mihomo
+      - name: Download Latest Mihomo (Compiler)
         run: |
-          # 下载最新版 Mihomo 内核用于编译
-          wget https://github.com/MetaCubeX/mihomo/releases/download/v1.18.1/mihomo-linux-amd64-v1.18.1.gz
-          gunzip mihomo-linux-amd64-v1.18.1.gz
-          mv mihomo-linux-amd64-v1.18.1 mihomo
-          chmod +x mihomo
+          # 1. 获取最新版本号
+          LATEST_TAG=$(curl -sSL "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Latest Mihomo version: $LATEST_TAG"
+          
+          # 2. 下载对应架构的二进制文件
+          DOWNLOAD_URL="https://github.com/MetaCubeX/mihomo/releases/download/$LATEST_TAG/mihomo-linux-amd64-$LATEST_TAG.gz"
+          wget -O ./tmp_bin/mihomo.gz "$DOWNLOAD_URL"
+          
+          # 3. 解压并赋予权限
+          gunzip ./tmp_bin/mihomo.gz
+          chmod +x ./tmp_bin/mihomo
+          
+          # 4. 验证版本 (这一步能确保工具下载正常)
+          ./tmp_bin/mihomo -v
 
-      - name: Convert to MRS
+      - name: Download Source Rules (Upstream)
         run: |
-          # 执行转换命令
-          ./mihomo convert-ruleset domain yaml ./rules/ext-cn-list.yaml ./rules/ext-cn-list.mrs
+          # 下载最新的 yaml 源文件 (使用 xmdhs 的源，你也可以换成自己的)
+          echo "Downloading CN List..."
+          curl -sSL -o ./rules/ext-cn-list.yaml https://raw.githubusercontent.com/xmdhs/cn-domain-list/rule-set/ext-cn-list.yaml
+          
+          echo "Downloading Not-CN List..."
+          curl -sSL -o ./rules/ext-not-cn-list.yaml https://raw.githubusercontent.com/xmdhs/cn-domain-list/rule-set/ext-not-cn-list.yaml
 
-      - name: Commit and Push
+      - name: Convert to MRS (Binary)
+        run: |
+          # 转换 CN 列表
+          echo "Converting ext-cn-list..."
+          ./tmp_bin/mihomo convert-ruleset domain yaml ./rules/ext-cn-list.yaml ./rules/ext-cn-list.mrs
+          
+          # 转换 Not-CN 列表
+          echo "Converting ext-not-cn-list..."
+          ./tmp_bin/mihomo convert-ruleset domain yaml ./rules/ext-not-cn-list.yaml ./rules/ext-not-cn-list.mrs
+          
+          # 检查生成结果
+          ls -lh ./rules/*.mrs
+
+      - name: Commit and Push Changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add ./rules/ext-cn-list.mrs
-          git commit -m "Auto update MRS rules" || exit 0
-          git push
+          
+          # 添加所有规则文件
+          git add ./rules/*.yaml
+          git add ./rules/*.mrs
+          
+          # 仅在有变动时提交，防止报错
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto update MRS ruleset: $(date +'%Y-%m-%d')"
+            git push
+          fi
